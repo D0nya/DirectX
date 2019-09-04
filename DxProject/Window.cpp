@@ -2,7 +2,6 @@
 #include <sstream>
 #include <string>
 
-
 //WindowClass
 Window::WindowClass Window::WindowClass::wndClass;
 
@@ -10,7 +9,7 @@ Window::WindowClass::WindowClass() noexcept : hInst(GetModuleHandle(nullptr))
 {
 	WNDCLASSEX wc = { 0 };
 	wc.cbSize = sizeof(wc);
-	wc.style = CS_OWNDC;
+	wc.style = CS_HREDRAW | CS_VREDRAW;
 	wc.lpfnWndProc = HandleMsgSetup;
 	wc.cbClsExtra = 0;
 	wc.cbWndExtra = 0;

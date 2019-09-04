@@ -47,4 +47,8 @@
 #define STRICT
 
 #include <Windows.h>
-//#pragma comment(lib, "d3d11.lib")
+#include <d3dcompiler.h> 
+#include <optional>
+#include <d3d11.h>
+#include <d3dx11.h>
+#include <DirectXMath.h>

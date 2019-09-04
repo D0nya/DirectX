@@ -1,7 +1,7 @@
 #pragma once
 #include "windStd.h"
 #include "Direct3dManager.h"
-#include <optional>
+
 
 class Window
 {
@@ -34,6 +34,6 @@ public:
 	Window(const Window&) = delete;
 	Window& operator=(const Window&) = delete;
 	~Window();
-
+	
 	std::optional<int> ProcessMessages() noexcept;	
 };
