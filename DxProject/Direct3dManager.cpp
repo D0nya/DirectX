@@ -1,6 +1,6 @@
 #include "Direct3dManager.h"
 
-Direct3dManager::Direct3dManager(HWND hWnd)
+Direct3dManager::Direct3dManager(HWND _hWnd) : hWnd(_hWnd)
 {
 	HRESULT hr = S_OK;
 	RECT rc;
@@ -56,6 +56,10 @@ Direct3dManager::Direct3dManager(HWND hWnd)
 	if (FAILED(InitGeometry()))
 		return;
 
+	// Инициализация матриц
+	if (FAILED(InitMatrixes()))
+		return;
+
 	CreateRearBuffer(hr);
 	SetupViewport();
 }
@@ -65,7 +69,9 @@ Direct3dManager::~Direct3dManager()
 	// Сначала отключим контекст устройства
 	if (g_pImmediateContext) g_pImmediateContext->ClearState();
 	// Потом удалим объекты
+	if (g_pConstantBuffer) g_pConstantBuffer->Release();
 	if (g_pVertexBuffer) g_pVertexBuffer->Release();
+	if (g_pIndexBuffer) g_pIndexBuffer->Release();
 	if (g_pVertexLayout) g_pVertexLayout->Release();
 	if (g_pVertexShader) g_pVertexShader->Release();
 	if (g_pPixelShader) g_pPixelShader->Release();
@@ -113,86 +119,6 @@ HRESULT Direct3dManager::CreateRearBuffer(HRESULT hr)
 	return hr;
 }
 
-HRESULT Direct3dManager::InitGeometry()
-{
-	HRESULT hr = S_OK;
-	// Компиляция вершинного шейдера из файла
-	ID3DBlob* pVSBlob = NULL; // Вспомогательный объект - просто место в оперативной памяти
-	hr = CompileShaderFromFile("shader.fx", "VS", "vs_4_0", &pVSBlob);
-	if (FAILED(hr))
-	{
-		MessageBox(NULL, "Невозможно скомпилировать файл FX. Пожалуйста, запустите данную программу из папки, содержащей файл FX.", "Ошибка", MB_OK);
-		return hr;
-	}
-
-	// Создание вершинного шейдера
-	hr = g_pd3dDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &g_pVertexShader);
-	if (FAILED(hr))
-	{
-		pVSBlob->Release();
-		return hr;
-	}
-
-	// Определение шаблона вершин
-	D3D11_INPUT_ELEMENT_DESC layout[] =
-	{
-			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-			/* семантическое имя, семантический индекс, размер, входящий слот (0-15), адрес начала данных в буфере вершин, класс входящего слота (не важно), InstanceDataStepRate (не важно) */
-	};
-	UINT numElements = ARRAYSIZE(layout);
-
-	// Создание шаблона вершин
-	hr = g_pd3dDevice->CreateInputLayout(layout, numElements, pVSBlob->GetBufferPointer(),
-		pVSBlob->GetBufferSize(), &g_pVertexLayout);
-	pVSBlob->Release();
-	if (FAILED(hr)) return hr;
-	// Подключение шаблона вершин
-	g_pImmediateContext->IASetInputLayout(g_pVertexLayout);
-
-	// Компиляция пиксельного шейдера из файла
-	ID3DBlob* pPSBlob = NULL;
-	hr = CompileShaderFromFile("shader.fx", "PS", "ps_4_0", &pPSBlob);
-	if (FAILED(hr))
-	{
-		MessageBox(NULL, "Невозможно скомпилировать файл FX. Пожалуйста, запустите данную программу из папки, содержащей файл FX.", "Ошибка", MB_OK);
-		return hr;
-	}
-	// Создание пиксельного шейдера
-	hr = g_pd3dDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &g_pPixelShader);
-	pPSBlob->Release();
-	if (FAILED(hr)) return hr;
-
-	// Создание буфера вершин (три вершины треугольника)
-	SimpleVertex vertices[3];
-	vertices[0].Pos.x = 0.0f;  vertices[0].Pos.y = 0.5f;  vertices[0].Pos.z = 0.5f;
-	vertices[1].Pos.x = 0.5f;  vertices[1].Pos.y = -0.5f;  vertices[1].Pos.z = 0.5f;
-	vertices[2].Pos.x = -0.5f;  vertices[2].Pos.y = -0.5f;  vertices[2].Pos.z = 0.5f;
-	
-	D3D11_BUFFER_DESC bd;  // Структура, описывающая создаваемый буфер
-	ZeroMemory(&bd, sizeof(bd));                    // очищаем ее
-	bd.Usage = D3D11_USAGE_DEFAULT;
-	bd.ByteWidth = sizeof(SimpleVertex) * 3; // размер буфера = размер одной вершины * 3
-	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;          // тип буфера - буфер 
-	bd.CPUAccessFlags = 0;
-
-	D3D11_SUBRESOURCE_DATA InitData; // Структура, содержащая данные буфера
-	ZeroMemory(&InitData, sizeof(InitData)); // очищаем 
-	InitData.pSysMem = vertices;               // указатель на наши 3 вершины
-
-	// Вызов метода g_pd3dDevice создаст объект буфера вершин ID3D11Buffer
-	hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pVertexBuffer);
-	if (FAILED(hr)) return hr;
-
-	// Установка буфера вершин:
-	UINT stride = sizeof(SimpleVertex);
-	UINT offset = 0;
-	g_pImmediateContext->IASetVertexBuffers(0, 1, &g_pVertexBuffer, &stride, &offset);
-
-	// Установка способа отрисовки вершин в буфере
-	g_pImmediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	return S_OK;
-}
-
 void Direct3dManager::SetupViewport()
 {
 	// Настройка вьюпорта
@@ -205,6 +131,165 @@ void Direct3dManager::SetupViewport()
 	vp.TopLeftY = 0;
 	// Подключаем вьюпорт к контексту устройства
 	g_pImmediateContext->RSSetViewports(1, &vp);
+}
+
+HRESULT Direct3dManager::InitGeometry()
+{
+	HRESULT hr = S_OK;
+
+	hr = CreateVertexShader("shader.fx");
+	if (FAILED(hr)) return hr;
+
+	// Подключение шаблона вершин
+	g_pImmediateContext->IASetInputLayout(g_pVertexLayout);
+
+	hr = CreatePixelShader("shader.fx");
+	if (FAILED(hr))return hr;
+	
+	hr = SetupVertexBuffer();
+	if (FAILED(hr))return hr;
+
+	return S_OK;
+}
+
+HRESULT Direct3dManager::CreateVertexShader(LPCSTR shaderName)
+{
+	HRESULT hr = S_OK;
+	// Компиляция вершинного шейдера из файла
+	ID3DBlob* pVSBlob = NULL; // Вспомогательный объект - просто место в оперативной памяти
+	hr = CompileShaderFromFile(shaderName, "VS", "vs_4_0", &pVSBlob);
+	if (FAILED(hr))
+	{
+		MessageBox(NULL, "Невозможно скомпилировать файл FX. Пожалуйста, запустите данную программу из папки, содержащей файл FX.", "Ошибка", MB_OK);
+		return hr;
+	}
+	// Создание вершинного шейдера
+	hr = g_pd3dDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), NULL, &g_pVertexShader);
+	if (FAILED(hr))
+	{
+		pVSBlob->Release();
+		return hr;
+	}
+	// Определение шаблона вершин
+	D3D11_INPUT_ELEMENT_DESC layout[] =
+	{
+			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+			{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+			/* семантическое имя, семантический индекс, размер, входящий слот (0-15), адрес начала данных в буфере вершин, класс входящего слота (не важно), InstanceDataStepRate (не важно) */
+	};
+	UINT numElements = ARRAYSIZE(layout);
+
+	// Создание шаблона вершин
+	hr = g_pd3dDevice->CreateInputLayout(layout, numElements, pVSBlob->GetBufferPointer(),
+		pVSBlob->GetBufferSize(), &g_pVertexLayout);
+	pVSBlob->Release();
+	return hr;
+}
+HRESULT Direct3dManager::CreatePixelShader(LPCSTR shaderName)
+{
+	HRESULT hr = S_OK;
+
+	// Компиляция пиксельного шейдера из файла
+	ID3DBlob* pPSBlob = NULL;
+	hr = CompileShaderFromFile(shaderName, "PS", "ps_4_0", &pPSBlob);
+	if (FAILED(hr))
+	{
+		MessageBox(NULL, "Невозможно скомпилировать файл FX. Пожалуйста, запустите данную программу из папки, содержащей файл FX.", "Ошибка", MB_OK);
+		return hr;
+	}
+	// Создание пиксельного шейдера
+	hr = g_pd3dDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), NULL, &g_pPixelShader);
+	pPSBlob->Release();
+	return hr;
+}
+HRESULT Direct3dManager::SetupVertexBuffer()
+{
+	HRESULT hr = S_OK;
+	// Создание буфера вершин (три вершины треугольника)
+	SimpleVertex vertices[]
+	{  /* координаты X, Y, Z                          цвет R, G, B, A     */
+
+			{ DirectX::XMFLOAT3(0.0f,  3.0f,  0.0f), DirectX::XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f) },
+			{ DirectX::XMFLOAT3(-1.0f,  0.0f, -1.0f), DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f) },
+			{ DirectX::XMFLOAT3(1.0f,  0.0f, -1.0f), DirectX::XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f) },
+			{ DirectX::XMFLOAT3(-1.0f,  0.0f,  1.0f), DirectX::XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f) },
+			{ DirectX::XMFLOAT3(1.0f,  0.0f,  1.0f), DirectX::XMFLOAT4(.0f, 1.0f, 0.0f, 1.0f) },
+			
+			{ DirectX::XMFLOAT3(0.0f,  -3.0f,  0.0f), DirectX::XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f) },
+	};
+
+	D3D11_BUFFER_DESC bd;  // Структура, описывающая создаваемый буфер
+	ZeroMemory(&bd, sizeof(bd));                    // очищаем ее
+	bd.Usage = D3D11_USAGE_DEFAULT;
+	bd.ByteWidth = sizeof(SimpleVertex) * 6; // размер буфера = размер одной вершины * 3
+	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;          // тип буфера - буфер 
+	bd.CPUAccessFlags = 0;
+
+	D3D11_SUBRESOURCE_DATA InitData; // Структура, содержащая данные буфера
+	ZeroMemory(&InitData, sizeof(InitData)); // очищаем 
+	InitData.pSysMem = vertices;               // указатель на вершины
+
+	// Вызов метода g_pd3dDevice создаст объект буфера вершин ID3D11Buffer
+	hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pVertexBuffer);
+	if (FAILED(hr)) return hr;
+	
+	hr = CreateIndexBuffer(bd, InitData);
+	if (FAILED(hr))
+		return hr;
+
+	// Установка буфера вершин:
+	UINT stride = sizeof(SimpleVertex);
+	UINT offset = 0;
+	g_pImmediateContext->IASetVertexBuffers(0, 1, &g_pVertexBuffer, &stride, &offset);
+
+	// Установка буфера индексов
+	g_pImmediateContext->IASetIndexBuffer(g_pIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+
+	// Установка способа отрисовки вершин в буфере
+	g_pImmediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	hr = CreateConstantBuffer(bd);
+	return hr;
+}
+
+HRESULT Direct3dManager::CreateIndexBuffer(D3D11_BUFFER_DESC bd, D3D11_SUBRESOURCE_DATA InitData)
+{
+	HRESULT hr = S_OK;
+	// Создание буфера индексов:
+	// Создание массива с данными
+	WORD indices[] =
+	{
+		0, 2, 1,      /* Треугольник 1 = vertices[0], vertices[2], vertices[1] */
+		0, 3, 4,      /* Треугольник 2 = vertices[0], vertices[3], vertices[4] */
+		0, 1, 3,      /* и т. д. */
+		0, 4, 2,
+
+		5, 1, 2,
+		5, 4, 3,
+		5, 3, 1,
+		5, 2, 4
+
+	};
+	bd.Usage = D3D11_USAGE_DEFAULT;            // Структура, описывающая создаваемый буфер
+	bd.ByteWidth = sizeof(WORD) * 24; // для 6 треугольников необходимо 18 вершин
+	bd.BindFlags = D3D11_BIND_INDEX_BUFFER; // тип - буфер индексов
+	bd.CPUAccessFlags = 0;
+	InitData.pSysMem = indices;         // указатель на наш массив индексов
+
+	// Вызов метода g_pd3dDevice создаст объект буфера индексов
+	hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pIndexBuffer);
+	return hr;
+}
+HRESULT Direct3dManager::CreateConstantBuffer(D3D11_BUFFER_DESC bd)
+{
+	HRESULT hr = S_OK;
+	// Создание константного буфера
+	bd.Usage = D3D11_USAGE_DEFAULT;
+	bd.ByteWidth = sizeof(ConstantBuffer);            // размер буфера = размеру структуры
+	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER; // тип - константный буфер
+	bd.CPUAccessFlags = 0;
+	hr = g_pd3dDevice->CreateBuffer(&bd, NULL, &g_pConstantBuffer);
+	return hr;
 }
 
 HRESULT Direct3dManager::CompileShaderFromFile(LPCSTR szFileName, LPCSTR szEntryPoint, LPCSTR szShaderModel, ID3DBlob** ppBlobOut)
@@ -227,16 +312,68 @@ HRESULT Direct3dManager::CompileShaderFromFile(LPCSTR szFileName, LPCSTR szEntry
 	return S_OK;
 }
 
+HRESULT Direct3dManager::InitMatrixes()
+{
+	RECT rc;
+	GetClientRect(hWnd, &rc);
+	UINT width = rc.right - rc.left;           // получаем ширину
+	UINT height = rc.bottom - rc.top;   // и высоту окна
+
+	// Инициализация матрицы мира
+	g_World = DirectX::XMMatrixIdentity();
+
+	// Инициализация матрицы вида
+	DirectX::XMVECTOR Eye = DirectX::XMVectorSet(0.0f, 0.0f, -10.0f, 0.0f);  // Откуда смотрим(x,y,z, angle)
+	DirectX::XMVECTOR At = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // Куда смотрим
+	DirectX::XMVECTOR Up = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // Направление верха
+	g_View = DirectX::XMMatrixLookAtLH(Eye, At, Up);
+
+	// Инициализация матрицы проекции
+	g_Projection = DirectX::XMMatrixPerspectiveFovLH(DirectX::XM_PIDIV4, width / (FLOAT)height, 0.01f, 100.0f);
+
+	return S_OK;
+}
+void Direct3dManager::SetMatrixes()
+{
+	// Обновление переменной-времени
+	static float t = 0.0f;
+	if (g_driverType == D3D_DRIVER_TYPE_REFERENCE)
+	{
+		t += (float)DirectX::XM_PI * 0.0125f;
+	}
+	else
+	{
+		static ULONGLONG dwTimeStart = 0;
+		ULONGLONG dwTimeCur = GetTickCount64();
+		if (dwTimeStart == 0)
+			dwTimeStart = dwTimeCur;
+		t = (dwTimeCur - dwTimeStart) / 3000.0f;
+	}
+	// Вращать мир по оси Y на угол t (в радианах)
+	g_World = DirectX::XMMatrixRotationY(t);
+
+	// Обновить константный буфер
+	// создаем временную структуру и загружаем в нее матрицы
+	ConstantBuffer cb;
+	cb.mWorld = XMMatrixTranspose(g_World);
+	cb.mView = XMMatrixTranspose(g_View);
+	cb.mProjection = XMMatrixTranspose(g_Projection);
+	// загружаем временную структуру в константный буфер g_pConstantBuffer
+	g_pImmediateContext->UpdateSubresource(g_pConstantBuffer, 0, NULL, &cb, 0, 0);
+}
 void Direct3dManager::Render()
 {
 	// Очистить задний буфер
 	float ClearColor[4] = { 0.0f, 1.0f, 1.0f, 1.0f }; // красный, зеленый, синий, альфа-канал
 	g_pImmediateContext->ClearRenderTargetView(g_pRenderTargetView, ClearColor);
+	// Очистить буфер глубин до 1.0 (максимальное значение)
+	g_pImmediateContext->ClearDepthStencilView(g_pDepthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
 	// Подключить к устройству рисования шейдеры
 	g_pImmediateContext->VSSetShader(g_pVertexShader, NULL, 0);
+	g_pImmediateContext->VSSetConstantBuffers(0, 1, &g_pConstantBuffer);
 	g_pImmediateContext->PSSetShader(g_pPixelShader, NULL, 0);
 	// Нарисовать три вершины
-	g_pImmediateContext->Draw(3, 0);
+	g_pImmediateContext->DrawIndexed(24, 0, 0);
 	// Вывести в передний буфер (на экран) информацию, нарисованную в заднем буфере.
 	g_pSwapChain->Present(0, 0);
 }

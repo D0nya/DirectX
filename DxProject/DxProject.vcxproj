@@ -171,11 +171,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Direct3dManager.cpp" />
+    <ClCompile Include="VertexCreator.cpp" />
     <ClCompile Include="Window.cpp" />
     <ClCompile Include="WinMain.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Direct3dManager.h" />
+    <ClInclude Include="VertexCreator.h" />
     <ClInclude Include="windStd.h" />
     <ClInclude Include="Window.h" />
   </ItemGroup>

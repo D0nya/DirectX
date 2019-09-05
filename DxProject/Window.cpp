@@ -137,7 +137,11 @@ std::optional<int> Window::ProcessMessages() noexcept
 			DispatchMessage(&msg);
 		}
 		else
+		{
+			manager->SetMatrixes();
 			manager->Render();
+		}
+
 	}
 	return {};
 }

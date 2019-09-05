@@ -9,7 +9,7 @@ private:
 	int width;
 	int	height;
 	HWND hWnd; // Идентификатор окна
-	Direct3dManager* manager;
+	Direct3dManager* manager;	// Класс для работы с DirectX
 
 	static LRESULT CALLBACK HandleMsgSetup(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept; 
 	static LRESULT CALLBACK HandleMsgThunk(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept;
