@@ -62,5 +62,5 @@ public:
 	void Render();
 	void Render(void* procedure);
 
-	void SetMatrixes();        // Обновление матрицы мира
+	void SetMatrixes(float fAngle); // Обновление матрицы мира
 };

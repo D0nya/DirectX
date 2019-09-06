@@ -138,7 +138,6 @@ std::optional<int> Window::ProcessMessages() noexcept
 		}
 		else
 		{
-			manager->SetMatrixes();
 			manager->Render();
 		}
 

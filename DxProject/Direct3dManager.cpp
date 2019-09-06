@@ -75,6 +75,8 @@ Direct3dManager::~Direct3dManager()
 	if (g_pVertexLayout) g_pVertexLayout->Release();
 	if (g_pVertexShader) g_pVertexShader->Release();
 	if (g_pPixelShader) g_pPixelShader->Release();
+	if (g_pDepthStencil) g_pDepthStencil->Release();
+	if (g_pDepthStencilView) g_pDepthStencilView->Release();
 	if (g_pRenderTargetView) g_pRenderTargetView->Release();
 	if (g_pSwapChain) g_pSwapChain->Release();
 	if (g_pImmediateContext) g_pImmediateContext->Release();
@@ -116,6 +118,40 @@ HRESULT Direct3dManager::CreateRearBuffer(HRESULT hr)
 
 	// Подключаем объект заднего буфера к контексту 
 	g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, NULL);
+
+	// Переходим к созданию буфера глубин
+// Создаем текстуру-описание буфера глубин
+	D3D11_TEXTURE2D_DESC descDepth;     // Структура с параметрами
+	ZeroMemory(&descDepth, sizeof(descDepth));
+	descDepth.Width = width;            // ширина и
+	descDepth.Height = height;    // высота текстуры
+	descDepth.MipLevels = 1;            // уровень интерполяции
+	descDepth.ArraySize = 1;
+	descDepth.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; // формат (размер пикселя)
+	descDepth.SampleDesc.Count = 1;
+	descDepth.SampleDesc.Quality = 0;
+	descDepth.Usage = D3D11_USAGE_DEFAULT;
+	descDepth.BindFlags = D3D11_BIND_DEPTH_STENCIL;         // вид - буфер глубин
+	descDepth.CPUAccessFlags = 0;
+	descDepth.MiscFlags = 0;
+	// При помощи заполненной структуры-описания создаем объект текстуры
+	hr = g_pd3dDevice->CreateTexture2D(&descDepth, NULL, &g_pDepthStencil);
+	if (FAILED(hr)) return hr;
+
+	// Теперь надо создать сам объект буфера глубин
+	D3D11_DEPTH_STENCIL_VIEW_DESC descDSV;            // Структура с параметрами
+	ZeroMemory(&descDSV, sizeof(descDSV));
+	descDSV.Format = descDepth.Format;         // формат как в текстуре
+	descDSV.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+	descDSV.Texture2D.MipSlice = 0;
+	// При помощи заполненной структуры-описания и текстуры создаем объект буфера глубин
+	hr = g_pd3dDevice->CreateDepthStencilView(g_pDepthStencil, &descDSV, &g_pDepthStencilView);
+	if (FAILED(hr)) return hr;
+
+	// Подключаем объект заднего буфера и объект буфера глубин к контексту устройства
+
+	g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, g_pDepthStencilView);
+
 	return hr;
 }
 
@@ -323,7 +359,7 @@ HRESULT Direct3dManager::InitMatrixes()
 	g_World = DirectX::XMMatrixIdentity();
 
 	// Инициализация матрицы вида
-	DirectX::XMVECTOR Eye = DirectX::XMVectorSet(0.0f, 0.0f, -10.0f, 0.0f);  // Откуда смотрим(x,y,z, angle)
+	DirectX::XMVECTOR Eye = DirectX::XMVectorSet(0.0f, -2.0f, -10.0f, 0.0f);  // Откуда смотрим(x,y,z, angle)
 	DirectX::XMVECTOR At = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // Куда смотрим
 	DirectX::XMVECTOR Up = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // Направление верха
 	g_View = DirectX::XMMatrixLookAtLH(Eye, At, Up);
@@ -333,7 +369,7 @@ HRESULT Direct3dManager::InitMatrixes()
 
 	return S_OK;
 }
-void Direct3dManager::SetMatrixes()
+void Direct3dManager::SetMatrixes(float fAngle)
 {
 	// Обновление переменной-времени
 	static float t = 0.0f;
@@ -349,8 +385,20 @@ void Direct3dManager::SetMatrixes()
 			dwTimeStart = dwTimeCur;
 		t = (dwTimeCur - dwTimeStart) / 3000.0f;
 	}
-	// Вращать мир по оси Y на угол t (в радианах)
-	g_World = DirectX::XMMatrixRotationY(t);
+	// Матрица-орбита: позиция объекта
+	DirectX::XMMATRIX mOrbit = DirectX::XMMatrixRotationY(-t + fAngle);
+	// Матрица-спин: вращение объекта вокруг своей оси
+	DirectX::XMMATRIX mSpin = DirectX::XMMatrixRotationY(t * 2);
+	// Матрица-позиция: перемещение на три единицы влево от начала координат
+	DirectX::XMMATRIX mTranslate = DirectX::XMMatrixTranslation(-3.0f, 0.0f, 0.0f);
+	// Матрица-масштаб: сжатие объекта в 2 раза
+	DirectX::XMMATRIX mScale = DirectX::XMMatrixScaling(0.5f, 0.5f, 0.5f);
+	// Результирующая матрица
+	//  --Сначала мы в центре, в масштабе 1:1:1, повернуты по всем осям на 0.0f.
+	//  --Сжимаем -> поворачиваем вокруг Y (пока мы еще в центре) -> переносим влево ->
+	//  --снова поворачиваем вокруг Y.
+	g_World = mScale * mSpin * mTranslate * mOrbit;
+	//Собственно, читаем комментарии, которые я сделал макси
 
 	// Обновить константный буфер
 	// создаем временную структуру и загружаем в нее матрицы
@@ -368,12 +416,20 @@ void Direct3dManager::Render()
 	g_pImmediateContext->ClearRenderTargetView(g_pRenderTargetView, ClearColor);
 	// Очистить буфер глубин до 1.0 (максимальное значение)
 	g_pImmediateContext->ClearDepthStencilView(g_pDepthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0);
-	// Подключить к устройству рисования шейдеры
-	g_pImmediateContext->VSSetShader(g_pVertexShader, NULL, 0);
-	g_pImmediateContext->VSSetConstantBuffers(0, 1, &g_pConstantBuffer);
-	g_pImmediateContext->PSSetShader(g_pPixelShader, NULL, 0);
-	// Нарисовать три вершины
-	g_pImmediateContext->DrawIndexed(24, 0, 0);
+
+	// Для шести пирамидок
+
+	for (int i = 0; i < 6; i++) 
+	{
+		// Устанавливаем матрицу, параметр - положение относительно оси Y в радианах
+		SetMatrixes(i * (DirectX::XM_PI * 2) / 6);
+		// Рисуем i-тую пирамидку
+		g_pImmediateContext->VSSetShader(g_pVertexShader, NULL, 0);
+		g_pImmediateContext->VSSetConstantBuffers(0, 1, &g_pConstantBuffer);
+		g_pImmediateContext->PSSetShader(g_pPixelShader, NULL, 0);
+		g_pImmediateContext->DrawIndexed(24, 0, 0);
+	}
+
 	// Вывести в передний буфер (на экран) информацию, нарисованную в заднем буфере.
 	g_pSwapChain->Present(0, 0);
 }
